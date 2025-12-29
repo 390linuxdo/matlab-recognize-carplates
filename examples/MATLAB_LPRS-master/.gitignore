@@ -1,0 +1,33 @@
+#########
+#Exclude all
+#########
+*
+!*/
+!.gitignore
+###########################################################################
+##	MATLAB
+###########################################################################
+#########
+#Source files:
+#Do NOT ignore MATLAB files.
+!*.m
+#########
+
+#########
+#Dadasets:
+#Do NOT ignore Dadasets.
+!字符模板(4020)/*
+!车牌测试集/*
+#########
+
+#########
+#Document files:
+#Do NOT ignore Markdokwn files.
+!*.md
+!assets/*
+#Do NOT ignore drawio files.
+!*.drawio
+#Do NOT ignore LICENSE files.
+!LICENSE
+#########
+
