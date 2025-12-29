@@ -1,96 +1,90 @@
 % recognize_chars.m
-% 字符识别模块 - 使用模板匹配识别字符
-%
-% 输入:
-%   chars - 1x7 cell数组，包含7个字符图像（40x20）
-%   templateDir - 字符模板目录
-% 输出:
-%   result - 识别结果字符串
-%   confidence - 每个字符的置信度（可选）
-%
-% 功能:
-%   1. 遍历模板库
-%   2. 计算像素差值
-%   3. 选择最小误差的匹配结果
+% 完全按照参考项目 LPRS.m 的逻辑实现
+% 关键：不做任何额外预处理，直接读取模板进行汉明距离匹配
 
 function [result, confidence] = recognize_chars(chars, templateDir)
-% ==================== 字符集定义 ====================
-% 数字 + 字母 + 省份
-digits = '0123456789';
-letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-provinces = '京沪津渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼';
-
-allChars = [digits, letters, provinces];
+% 字符代码表（与参考项目完全一致）
+liccode = char(['0':'9' 'A':'Z' '京沪粤津苏浙鄂陕豫桂贵琼湘皖鲁新赣黑晋蒙吉闽贵青藏川宁渝辽冀甘云']);
 
 result = '';
 confidence = zeros(1, 7);
 
-% ==================== 逐个识别 ====================
-for i = 1:7
-    charImg = chars{i};
+for l = 1:7
+    % 读取分割字符
+    charImg = chars{l};
 
-    % 确保是二值图像
-    if max(charImg(:)) > 1
-        charImg = double(charImg) > 20;
+    % 归一化为40x20（与参考项目一致）
+    SegBw2 = imresize(charImg, [40, 20], 'nearest');
+
+    % 固定阈值二值化（参考项目用阈值20）
+    if max(SegBw2(:)) > 1
+        SegBw2_binary = double(SegBw2) > 20;
     else
-        charImg = double(charImg);
+        SegBw2_binary = double(SegBw2) > 0.1;
     end
 
-    % 确保尺寸正确
-    charImg = imresize(charImg, [40, 20], 'nearest');
-
-    % 确定搜索范围
-    if i == 1
-        % 第一位：只搜索省份汉字
-        searchChars = provinces;
-    elseif i == 2
-        % 第二位：只搜索字母
-        searchChars = letters;
+    % 确定搜索范围（与参考项目逻辑一致）
+    if l == 1
+        % 第一位：汉字识别（索引37-48对应汉字）
+        kmin = 37;
+        kmax = length(liccode);
+    elseif l == 2
+        % 第二位：A-Z字母识别（索引11-36对应A-Z）
+        kmin = 11;
+        kmax = 36;
     else
-        % 第3-7位：搜索数字和字母
-        searchChars = [digits, letters];
+        % 第三位及以后：数字或字母（索引1-36，0-9和A-Z）
+        kmin = 1;
+        kmax = 36;
     end
 
-    % 计算与每个模板的差异
-    minError = inf;
-    bestMatch = '?';
+    % 汉明距离匹配
+    Error = inf(1, length(liccode));
 
-    for j = 1:length(searchChars)
-        templateChar = searchChars(j);
-
-        % 读取模板
-        templatePath = fullfile(templateDir, [templateChar, '.bmp']);
-        if ~exist(templatePath, 'file')
-            % 尝试jpg格式
-            templatePath = fullfile(templateDir, [templateChar, '.jpg']);
-        end
+    for k2 = kmin:kmax
+        templatePath = fullfile(templateDir, [liccode(k2), '.bmp']);
 
         if exist(templatePath, 'file')
-            templateImg = imread(templatePath);
+            SamBw2 = imread(templatePath);
 
-            % 转为二值
-            if size(templateImg, 3) == 3
-                templateImg = rgb2gray(templateImg);
+            % 转灰度
+            if size(SamBw2, 3) == 3
+                SamBw2 = rgb2gray(SamBw2);
             end
-            templateImg = double(templateImg) > 1;
-            templateImg = imresize(templateImg, [40, 20], 'nearest');
 
-            % 计算像素差值
-            diff = abs(charImg - templateImg);
-            error = sum(diff(:));
+            % 调整大小
+            SamBw2 = imresize(SamBw2, [40, 20], 'nearest');
 
-            if error < minError
-                minError = error;
-                bestMatch = templateChar;
+            % 参考项目的模板是直接读取的二值图像，不需要额外二值化
+            % 但为了兼容，我们检测并处理
+            if max(SamBw2(:)) > 1
+                SamBw2_binary = double(SamBw2) > 20;
+            else
+                SamBw2_binary = double(SamBw2) > 0.1;
             end
+
+            % 计算汉明距离
+            Dmax = 0;
+            for i = 1:40
+                for j = 1:20
+                    Dmax = Dmax + xor(SegBw2_binary(i,j), SamBw2_binary(i,j));
+                end
+            end
+            Error(k2) = Dmax;
         end
     end
 
-    % 记录结果
-    result = [result, bestMatch];
+    % 找最小误差
+    Error1 = Error(kmin:kmax);
+    MinError = min(Error1);
+    findc = find(Error1 == MinError);
 
-    % 计算置信度（误差越小置信度越高）
-    maxPossibleError = 40 * 20;  % 最大可能误差
-    confidence(i) = 1 - (minError / maxPossibleError);
+    if ~isempty(findc)
+        result = [result, liccode(findc(1) + kmin - 1)];
+        confidence(l) = 1 - MinError / (40 * 20);
+    else
+        result = [result, '?'];
+        confidence(l) = 0;
+    end
 end
 end
